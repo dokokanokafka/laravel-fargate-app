@@ -1,0 +1,37 @@
+# ワークフロー名
+name: deploy
+
+# ワークフロー処理開始イベントを指定
+on:
+# プッシュ時に処理が開始される
+  push:
+    branches:
+    # mainにマージされたら処理が開始されるようにしている(直接プッシュの場合も同じ)
+      - main
+      # 一時的な検証目的
+      - feature/push_images_to_ecr
+
+env:
+# ここの設定はワークフロー全体に影響される
+  AWS_REGION: ap-northeast-1
+
+jobs:
+# ジョブID
+  deploy:
+  # ジョブ名(省略可能)
+    name: Deploy app to AWS Fargate
+    # DockerやAWS CLIなどが入っている
+    runs-on: ubuntu-latest
+
+    steps:
+          # ステップ名　省略可能
+        - name: Configure aws credentials for prod
+          # 条件にあった場合のみ動く。複数環境でそれぞれのAWSにログインしたい場合などには分ける必要がある
+          # if: github.ref == 'refs/heads/main'
+          # AWS公式のアクションを動かす CLIを使ってAWSの操作をする
+          uses: aws-actions/configure-aws-credentials@v1
+          with:
+          # ECRにログインするため認証情報
+            aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+            aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+            aws-region: ${{ env.AWS_REGION }}
