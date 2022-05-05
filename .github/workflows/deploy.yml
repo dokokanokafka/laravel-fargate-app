@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-          # ステップ名　省略可能
+          # ステップ名（省略可能）
         - name: Configure aws credentials for prod
           # 条件にあった場合のみ動く。複数環境でそれぞれのAWSにログインしたい場合などには分ける必要がある
           # if: github.ref == 'refs/heads/main'
