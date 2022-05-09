@@ -40,7 +40,7 @@ jobs:
             aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
             aws-region: ${{ env.AWS_REGION }}
             role-to-assume: ${{ secrets.PROD_AWS_ASSUME_ROLE_ARN }} #arn:aws:iam::AWSアカウント:role/example-prod-foobar-deployer をGitHub側に登録
-            role-duration-seconds: 1800 #assume roleによって得られる一時的な権限の有効期間。単位は秒なので30分　ちなみに設定しないとデフォルトとなり、6hとなる
+            # role-duration-seconds: 1800 #assume roleによって得られる一時的な権限の有効期間。単位は秒なので30分　ちなみに設定しないとデフォルトとなり、6hとなる
         - name: Set env vars for prod
                 # if: github.ref == 'refs/heads/main'
                 # 別ブランチがあるとしたら、nameからrunまで書く
