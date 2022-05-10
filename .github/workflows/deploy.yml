@@ -1,131 +1,79 @@
-# ワークフロー名
 name: deploy
 
-# ワークフロー処理開始イベントを指定
 on:
-# プッシュ時に処理が開始される
   push:
     branches:
-    # mainにマージされたら処理が開始されるようにしている(直接プッシュの場合も同じ)
       - main
-      # 一時的な検証目的
-      - feature/push_images_to_ecr
 
 env:
-# ここの設定はワークフロー全体に影響される
   AWS_REGION: ap-northeast-1
-  #ワークフロー実行のきっかけとなるコミットのSHA
   IMAGE_TAG: ${{ github.sha }}
   SYSTEM_NAME: example
   SERVICE_NAME: foobar
 
 jobs:
-# ジョブID
   deploy:
-  # ジョブ名(省略可能)
     name: Deploy app to AWS Fargate
-    # DockerやAWS CLIなどが入っている
     runs-on: ubuntu-latest
 
     steps:
-          # ステップ名（省略可能）
-        - name: Configure aws credentials for prod
-          # 条件にあった場合のみ動く。複数環境でそれぞれのAWSにログインしたい場合などには分ける必要がある
-          # if: github.ref == 'refs/heads/main'
-          # AWS公式のアクションを動かす CLIを使ってAWSの操作をする
-          uses: aws-actions/configure-aws-credentials@v1
-          with:
-          # ECRにログインするため認証情報 ここの変数はGitHub側で登録する
-            aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
-            aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
-            aws-region: ${{ env.AWS_REGION }}
-            role-to-assume: ${{ secrets.PROD_AWS_ASSUME_ROLE_ARN }} #arn:aws:iam::AWSアカウント:role/example-prod-foobar-deployer をGitHub側に登録
-            # role-duration-seconds: 1800 #assume roleによって得られる一時的な権限の有効期間。単位は秒なので30分　ちなみに設定しないとデフォルトとなり、6hとなる
-        - name: Set env vars for prod
-                # if: github.ref == 'refs/heads/main'
-                # 別ブランチがあるとしたら、nameからrunまで書く
-                # 環境変数ENV_NAMEの設定
-                # runにはそのステップで実行するコマンドを書く
-                # echo "{name}={value}" >> $GITHUB_ENV 環境変数名と値のペアを書くことで環境変数を追加できる
-                # env：ENV_NAME:prodのように設定すると環境変数が有効なのはこのステップのみとなる。
-                # が、以降のステップもENV_NAME:prodが効いてほしいので$GITHUB_ENVを使用している
-                run: echo "ENV_NAME=prod" >> $GITHUB_ENV
-        # Github Actionsの環境にlaravel-fargate-appリポジトリのコードをチェックアウト(clone)する
-        - uses: actions/checkout@v2
+      - name: Configure aws credentials for prod
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.PROD_AWS_ASSUME_ROLE_ARN }}
+          role-duration-seconds: 1800
 
-        # コンテナ起動。後続のステップでコンテナを通してパッケージのインストールやビルドを行うため
-        - run: docker-compose up -d --build app web
+      - name: Set env vars for prod
+        if: github.ref == 'refs/heads/main'
+        run: echo "ENV_NAME=prod" >> $GITHUB_ENV
 
-        # ジョブが起動する度にPHP関連パッケージのインストールがなされるが
-        # PHP関連のパッケージをキャッシュさせ、次回のジョブ起動時に内容確認、インストール
-        # 対象に変更がなければキャッシュを利用させる
-        - name: Cache composer
-                id: cache-composer
-                #ステップ中とジョブ全体の終了時にも自動で後処理を行う
-                uses: actions/cache@v2
-                with:
-                  path: backend/vendor
-                  # ここに指定した名前でキャッシュを行い、次回ジョブ起動時に同じkeyのキャッシュがあれば復元する
-                  # SHA256ハッシュをkeyに含める
-                  # あえてv1と書くことでキャッシュを利用せずジョブを実行したい場合、v2など書き換えられるようにする
-                  # actions/cacheはリポジトリ当たりMAX5gb。それ以上は古いのから削除。1週間以上前のは自動削除。
-                  key: composer-v1-${{ hashFiles('backend/composer.lock') }}
-        #　キャッシュの復元と保存を行う
+      - uses: actions/checkout@v2
 
-        # パッケージのインストール
-        # -Tオプションでtty(標準入出力となっている端末デバイス)を無効にする
-        # GitHub Actionsにはttyがないので、コンテナで何か実行したい時には必要となる
-        # -nオプションでは質問表示を行わないようにするためのオプション。CIツールだと回答入力できないため無効化する
-        # --no-devオプションcomposer.jsonに記述されてるパッケージ中require-devに記述されたパッケージを
-        # インストール対象外とする。（本番環境で動かすには不要なため）
-        - run: docker-compose exec -T app composer install -n --prefer-dist --no-dev
-          # キャッシュヒットしていなければインストール
-          # 否定の演算子を使いたいため${{ }}を入れている
-          # ステップのoutputを参照したい場合、steps.ステップid.ouutputs.outputの名前 となる
-          # id: cache-composerを付与した
-          if: ${{ !steps.cache-composer.outputs.cache-hit }}
+      - run: docker-compose up -d --build app web
 
-# CIツールでNodejsのパッケージをインストールする場合はnpm ciがよく使われる
-        - name: Cache npm
-          id: cache-npm-ci
-          uses: actions/cache@v2
-          with:
-            path: backend/node_modules
-            key: npm-v1-${{ hashFiles('backend/package-lock.json') }}
+      - name: Cache composer
+        id: cache-composer
+        uses: actions/cache@v2
+        with:
+          path: backend/vendor
+          key: composer-v1-${{ hashFiles('backend/composer.lock') }}
 
-        - run: docker-compose exec -T web npm ci
-          if: ${{ !steps.cache-npm-ci.outputs.cache-hit }}
+      - run: docker-compose exec -T app composer install -n --prefer-dist --no-dev
+        if: ${{ !steps.cache-composer.outputs.cache-hit }}
 
-        #JSのトランスパイル
-        - run: docker-compose exec -T web npm run prod
+      - name: Cache npm
+        id: cache-npm-ci
+        uses: actions/cache@v2
+        with:
+          path: backend/node_modules
+          key: npm-v1-${{ hashFiles('backend/package-lock.json') }}
 
-        #ECRにログイン
-        #  以前ステップのaws-actions/configure-aws-credentialsで設定されたのが使用される
-        - uses: aws-actions/amazon-ecr-login@v1
-          id: amazon-ecr-login
+      - run: docker-compose exec -T web npm ci
+        if: ${{ !steps.cache-npm-ci.outputs.cache-hit }}
 
-        #nginxのイメージをビルドし、ECRにプッシュ
-        - name: Push nginx image to ecr
+      - run: docker-compose exec -T web npm run prod
+
+      - uses: aws-actions/amazon-ecr-login@v1
+        id: amazon-ecr-login
+
+      - name: Push nginx image to ecr
         env:
-        #BuildKitを使ってイメージのビルドをしたい場合は、1に設定するのが必要らしい
           DOCKER_BUILDKIT: 1
-          # AWS　ID.dkr.ap-northeast-１.amazonaws.comが入る
           ECR_REGISTRY: ${{ steps.amazon-ecr-login.outputs.registry }}
-          # プッシュ先のリポジトリ名（ここではexample-prod-foobar-nginx）が入るようになっている
           ECR_REPOSITORY: ${{ env.SYSTEM_NAME }}-${{ env.ENV_NAME }}-${{ env.SERVICE_NAME }}-nginx
-        # --cache-fromで最新イメージを取得できるようにすることで、イメージをプルし、ビルドのキャッシュとして利用できることで、ビルド時間の短縮ができる
-        # -tをつけてイメージにタグ付けをしている。タグにlatestとコミットSHAをつけるようにしている
         run: |
           docker build \
             --cache-from=$ECR_REGISTRY/$ECR_REPOSITORY:latest --build-arg BUILDKIT_INLINE_CACHE=1 . \
             -f infra/docker/nginx/Dockerfile \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        # イメージへのプッシュ
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-        #PHPのイメージをビルドし、ECRにプッシュ。やることはniginと同じ
       - name: Push php image to ecr
         env:
           DOCKER_BUILDKIT: 1
@@ -139,8 +87,3 @@ jobs:
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-
-
-
-
