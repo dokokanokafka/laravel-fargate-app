@@ -28,4 +28,8 @@ RUN apt-get update && \
 COPY ./infra/docker/php/php-fpm.d/zzz-www.conf /usr/local/etc/php-fpm.d/zzz-www.conf
 COPY ./infra/docker/php/php.ini /usr/local/etc/php/php.ini
 
+# コピーと /work/backendのオーナーとグループがrootではなくwww-data:www-dataになるように
+# bootstrap/cacheの書き込み処理が権限エラーとならないようにする
+COPY --chown=www-data:www-data ./backend /work/backend
+
 WORKDIR /work/backend
